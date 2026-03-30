@@ -17,6 +17,8 @@ def send_command(cmd):
 
 # TEST LOOP
 while True:
-    print("Backend running...")
-    send_command("say Backend connected!")
+    print("Trying to get player storage..")
+    send_command("data get storage jojo_recubed player")
+    #/data get storage jojo_recubed player
+    #send_command("say Backend connected!")
     time.sleep(30)
