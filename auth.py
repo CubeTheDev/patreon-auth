@@ -10,6 +10,8 @@ RCON_PORT = 25575
 
 # PATREON VARIABLES
 PATREON_TOKEN = "_4OzZLqR37DvvoI41guxMPsomKZHniimpIn2h12GJeM"
+headers = {"Authorization": f"Bearer {PATREON_TOKEN}"}
+CAMPAIGN_ID = "5171342"
 
 def send_command(cmd):
     try:
@@ -25,14 +27,20 @@ while True:
     #print("Trying to get player storage..")
     #send_command("data get storage jojo_recubed player")
     print("Testing Patreon API..")
-    headers = {"Authorization": f"Bearer {PATREON_TOKEN}"}
-
-    # Get campaigns for this creator
-    url = "https://www.patreon.com/api/oauth2/v2/campaigns"
+    url = f"https://www.patreon.com/api/oauth2/v2/campaigns/{CAMPAIGN_ID}/members?include=currently_entitled_tiers&page[size]=100"
     resp = requests.get(url, headers=headers)
     
-    print(resp.status_code)
-    print(json.dumps(resp.json(), indent=2))
+    print("Status code:", resp.status_code)
+    
+    if resp.status_code == 200:
+        data = resp.json()
+        for member in data.get("data", []):
+            email = member["attributes"].get("email")
+            status = member["attributes"].get("patron_status")
+            amount = member["attributes"].get("currently_entitled_amount_cents")
+            print(f"Email: {email}, Status: {status}, Amount (cents): {amount}")
+    else:
+        print(resp.json())
     #url = "https://www.patreon.com/api/oauth2/v2/campaigns?include=memberships"
     #headers = {"Authorization": f"Bearer {PATREON_TOKEN}"}
     #resp = requests.get(url, headers=headers)
