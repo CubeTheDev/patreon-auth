@@ -2,7 +2,7 @@ import time
 from mcrcon import MCRcon
 
 # REPLACE THESE WITH YOUR DATA
-RCON_HOST = "srv1533907.hstgr.cloud:25565"
+RCON_HOST = "srv1533907.hstgr.cloud"
 RCON_PASSWORD = "v3D3hT3buC_tfarc3n1M"
 RCON_PORT = 25575
 
