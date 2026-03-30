@@ -28,7 +28,7 @@ while True:
     #send_command("data get storage jojo_recubed player")
     print("Testing Patreon API..")
     #url = f"https://www.patreon.com/api/oauth2/v2/campaigns/{CAMPAIGN_ID}/members?include=currently_entitled_tiers&page[size]=100"
-    url = f"https://www.patreon.com/api/oauth2/v2/members?filter[campaign_id]={CAMPAIGN_ID}&fields[member]=email,full_name,patron_status,pledge_amount_cents,currently_entitled_tiers&page[size]=100"
+    url = f"https://www.patreon.com/api/oauth2/v2/campaigns/{CAMPAIGN_ID}/members?fields[member]=email,full_name,patron_status,currently_entitled_amount_cents,is_free_trial,is_gifted,last_charge_status&page[size]=100"
     resp = requests.get(url, headers=headers)
     
     print("Status code:", resp.status_code)
