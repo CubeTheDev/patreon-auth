@@ -1,6 +1,7 @@
 import time
 import json
 import requests
+import re
 from mcrcon import MCRcon
 
 # =========================
@@ -14,87 +15,125 @@ RCON_PORT = 25575
 PATREON_TOKEN = "_4OzZLqR37DvvoI41guxMPsomKZHniimpIn2h12GJeM"
 CAMPAIGN_ID = "5171342"
 
+# Tier thresholds (in cents)
 HERO_THRESHOLD = 300
 LEGEND_THRESHOLD = 800
 
-PATREON_SCORE_COMMAND = 'scoreboard players set {player} patreon_tier {tier}'
-
 
 # =========================
-# FUNCTIONS
+# RCON FUNCTION
 # =========================
 
 def send_command(cmd):
     try:
         with MCRcon(RCON_HOST, RCON_PASSWORD, port=RCON_PORT) as mcr:
-            response = mcr.command(cmd)
-            print(f"[RCON] Command sent: {cmd}")
-            print(f"[RCON] Response: {response}")
+            return mcr.command(cmd)
     except Exception as e:
-        print("[RCON] Error sending command:", e)
+        print("[RCON ERROR]", e)
+        return None
 
+
+# =========================
+# GET MINECRAFT STORAGE
+# =========================
+
+def get_patreon_links():
+    raw = send_command("data get storage jojo_recubed patreon")
+
+    if not raw:
+        return []
+
+    print("\n[MC RAW STORAGE]")
+    print(raw)
+
+    # Extract JSON-like NBT
+    match = re.search(r'\{.*\}', raw)
+    if not match:
+        print("[Parse] No valid data found")
+        return []
+
+    nbt = match.group(0)
+
+    # Convert NBT → JSON
+    nbt = re.sub(r'(\w+):', r'"\1":', nbt)  # add quotes to keys
+    nbt = nbt.replace("'", '"')            # normalize quotes
+
+    try:
+        data = json.loads(nbt)
+    except Exception as e:
+        print("[Parse ERROR]", e)
+        return []
+
+    # Structure: {data:[{player,mail}]}
+    links = data.get("data", [])
+
+    print(f"[Parse] Found {len(links)} linked players\n")
+
+    return links
+
+
+# =========================
+# FETCH PATREON MEMBERS
+# =========================
 
 def fetch_patreon_members():
-    """Retrieve active Patreon members with emails and pledge amounts"""
     members = []
+
     url = f"https://www.patreon.com/api/oauth2/v2/campaigns/{CAMPAIGN_ID}/members"
     headers = {"Authorization": f"Bearer {PATREON_TOKEN}"}
     params = {
-        "fields[member]": "email,full_name,patron_status,currently_entitled_amount_cents,is_free_trial,is_gifted,last_charge_status",
+        "fields[member]": "email,full_name,patron_status,currently_entitled_amount_cents",
         "page[size]": 100
     }
 
     while url:
         resp = requests.get(url, headers=headers, params=params)
+
         if resp.status_code != 200:
-            print("[Patreon] Error fetching members:", resp.status_code, resp.json())
+            print("[Patreon ERROR]", resp.status_code, resp.json())
             return members
 
         data = resp.json()
-        for m in data.get("data", []):
-            attrs = m.get("attributes", {})
-            email = attrs.get("email")
-            full_name = attrs.get("full_name", "Unknown")
-            status = attrs.get("patron_status")
-            amount = attrs.get("currently_entitled_amount_cents", 0)
-            free_trial = attrs.get("is_free_trial", False)
-            gifted = attrs.get("is_gifted", False)
 
-            if status == "active_patron" and email and not free_trial and not gifted:
+        for m in data.get("data", []):
+            attr = m.get("attributes", {})
+
+            email = attr.get("email")
+            status = attr.get("patron_status")
+            amount = attr.get("currently_entitled_amount_cents", 0)
+
+            if status == "active_patron" and email:
                 members.append({
-                    "full_name": full_name,
                     "email": email.lower(),
                     "amount": amount
                 })
 
-        # Pagination
         url = data.get("links", {}).get("next")
 
-    # Print all members in a readable log
-    print("\n[Patreon] Active members list:")
-    print("{:<25} {:<35} {:<10}".format("Name", "Email", "Cents"))
-    print("-" * 75)
+    # DEBUG PRINT
+    print("\n[Patreon] Active Members:")
+    print("{:<35} {:<10}".format("Email", "Cents"))
+    print("-" * 50)
+
     for m in members:
-        print("{:<25} {:<35} {:<10}".format(m["full_name"], m["email"], m["amount"]))
-    print("-" * 75, "\n")
+        print("{:<35} {:<10}".format(m["email"], m["amount"]))
+
+    print("-" * 50)
+    print(f"[Patreon] Total Active Members: {len(members)}\n")
 
     return members
 
 
-def check_email_and_set_score(player_name, email_input, members):
-    email_input = email_input.lower()
-    tier = 0
-    for m in members:
-        if m["email"] == email_input:
-            amount = m["amount"]
-            if amount >= LEGEND_THRESHOLD:
-                tier = 2
-            elif amount >= HERO_THRESHOLD:
-                tier = 1
-            break
+# =========================
+# TIER CALCULATION
+# =========================
 
-    send_command(PATREON_SCORE_COMMAND.format(player=player_name, tier=tier))
-    print(f"[Auth] Player {player_name} linked email '{email_input}' -> tier {tier}")
+def get_tier(amount):
+    if amount >= LEGEND_THRESHOLD:
+        return 2
+    elif amount >= HERO_THRESHOLD:
+        return 1
+    return 0
 
 
 # =========================
@@ -103,16 +142,34 @@ def check_email_and_set_score(player_name, email_input, members):
 
 if __name__ == "__main__":
     while True:
-        print("[Auth] Fetching active Patreon members...")
+        print("\n============================")
+        print("[Auth] New cycle")
+        print("============================")
+
+        # 1. Fetch Patreon members
         members = fetch_patreon_members()
-        print(f"[Auth] Found {len(members)} active members with emails\n")
 
-        # Example: process newly joined players from Minecraft storage
-        # Replace with actual storage reading in the future
-        test_player_name = "CubePlayer"
-        test_email_input = "example@patreon.com"
+        # Fast lookup dictionary
+        member_lookup = {m["email"]: m["amount"] for m in members}
 
-        check_email_and_set_score(test_player_name, test_email_input, members)
+        # 2. Get Minecraft linked players
+        links = get_patreon_links()
 
-        print("[Auth] Sleeping 30 seconds before next check...\n")
+        # 3. Match and assign tiers
+        for entry in links:
+            player = entry.get("player")
+            email = entry.get("mail", "").lower()
+
+            if not player or not email:
+                continue
+
+            amount = member_lookup.get(email, 0)
+            tier = get_tier(amount)
+
+            cmd = f"scoreboard players set {player} patreon_tier {tier}"
+            send_command(cmd)
+
+            print(f"[Auth] {player} ({email}) -> tier {tier}")
+
+        print("\n[Auth] Sleeping 30 seconds...\n")
         time.sleep(30)
